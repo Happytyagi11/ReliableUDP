@@ -15,6 +15,8 @@
 #define PLATFORM_MAC      2
 #define PLATFORM_UNIX     3
 
+const int PacketSizeHack = 384;
+
 #if defined(_WIN32)
 #define PLATFORM PLATFORM_WINDOWS
 #elif defined(__APPLE__)
@@ -438,26 +440,26 @@ namespace net
 			}
 		}
 
-		virtual bool SendPacket(const unsigned char data[], int size)
+		virtual bool SendPacket(const unsigned char data[], int PacketSizeHack)
 		{
 			assert(running);
 			if (address.GetAddress() == 0)
 				return false;
-			unsigned char packet[size + 4];
+			unsigned char packet[PacketSizeHack + 4];
 			packet[0] = (unsigned char)(protocolId >> 24);
 			packet[1] = (unsigned char)((protocolId >> 16) & 0xFF);
 			packet[2] = (unsigned char)((protocolId >> 8) & 0xFF);
 			packet[3] = (unsigned char)((protocolId) & 0xFF);
-			std::memcpy(&packet[4], data, size);
-			return socket.Send(address, packet, size + 4);
+			std::memcpy(&packet[4], data, PacketSizeHack);
+			return socket.Send(address, packet, PacketSizeHack + 4);
 		}
 
-		virtual int ReceivePacket(unsigned char data[], int size)
+		virtual int ReceivePacket(unsigned char data[], int PacketSizeHack)
 		{
 			assert(running);
-			unsigned char packet[size + 4];
+			unsigned char packet[PacketSizeHack + 4];
 			Address sender;
-			int bytes_read = socket.Receive(sender, packet, size + 4);
+			int bytes_read = socket.Receive(sender, packet, PacketSizeHack + 4);
 			if (bytes_read == 0)
 				return 0;
 			if (bytes_read <= 4)
