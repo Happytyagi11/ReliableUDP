@@ -155,7 +155,7 @@ namespace net
 	{
 #if PLATFORM == PLATFORM_WINDOWS
 		WSADATA WsaData;
-		return WSAStartup(MAKEWORD(2, 2), &WsaData) != NO_ERROR;
+		return WSAStartup(MAKEWORD(2, 2), &WsaData) == NO_ERROR;
 #else
 		return true;
 #endif
@@ -204,7 +204,7 @@ namespace net
 			address.sin_addr.s_addr = INADDR_ANY;
 			address.sin_port = htons((unsigned short)port);
 
-			if (bind(socket, (const sockaddr*)&address, sizeof(sockaddr_in)) < 0)
+			if (::bind(socket, (const sockaddr*)&address, sizeof(sockaddr_in)) < 0)
 			{
 				printf("failed to bind socket\n");
 				Close();
@@ -445,21 +445,21 @@ namespace net
 			assert(running);
 			if (address.GetAddress() == 0)
 				return false;
-			unsigned char packet[PacketSizeHack + 4];
+			std::vector<unsigned char> packet(PacketSizeHack + 4);
 			packet[0] = (unsigned char)(protocolId >> 24);
 			packet[1] = (unsigned char)((protocolId >> 16) & 0xFF);
 			packet[2] = (unsigned char)((protocolId >> 8) & 0xFF);
 			packet[3] = (unsigned char)((protocolId) & 0xFF);
-			std::memcpy(&packet[4], data, PacketSizeHack);
-			return socket.Send(address, packet, PacketSizeHack + 4);
+			std::memcpy(packet.data() + 4, data, PacketSizeHack);
+			return socket.Send(address, packet.data(), PacketSizeHack + 4);
 		}
 
 		virtual int ReceivePacket(unsigned char data[], int PacketSizeHack)
 		{
 			assert(running);
-			unsigned char packet[PacketSizeHack + 4];
+			std::vector<unsigned char> packet(PacketSizeHack + 4);
 			Address sender;
-			int bytes_read = socket.Receive(sender, packet, PacketSizeHack + 4);
+			int bytes_read = socket.Receive(sender, packet.data(), PacketSizeHack + 4);
 			if (bytes_read == 0)
 				return 0;
 			if (bytes_read <= 4)
@@ -971,13 +971,13 @@ namespace net
 			}
 #endif
 			const int header = 12;
-			unsigned char packet[header + size];
+			std::vector<unsigned char> packet(header + size);
 			unsigned int seq = reliabilitySystem.GetLocalSequence();
 			unsigned int ack = reliabilitySystem.GetRemoteSequence();
 			unsigned int ack_bits = reliabilitySystem.GenerateAckBits();
-			WriteHeader(packet, seq, ack, ack_bits);
-			std::memcpy(packet + header, data, size);
-			if (!Connection::SendPacket(packet, size + header))
+			WriteHeader(packet.data(), seq, ack, ack_bits);
+			std::memcpy(packet.data() + header, data, size);
+			if (!Connection::SendPacket(packet.data(), size + header))
 				return false;
 			reliabilitySystem.PacketSent(size);
 			return true;
@@ -988,8 +988,8 @@ namespace net
 			const int header = 12;
 			if (size <= header)
 				return false;
-			unsigned char packet[header + size];
-			int received_bytes = Connection::ReceivePacket(packet, size + header);
+			std::vector<unsigned char> packet(header + size);
+			int received_bytes = Connection::ReceivePacket(packet.data(), size + header);
 			if (received_bytes == 0)
 				return false;
 			if (received_bytes <= header)
@@ -997,10 +997,10 @@ namespace net
 			unsigned int packet_sequence = 0;
 			unsigned int packet_ack = 0;
 			unsigned int packet_ack_bits = 0;
-			ReadHeader(packet, packet_sequence, packet_ack, packet_ack_bits);
+			ReadHeader(packet.data(), packet_sequence, packet_ack, packet_ack_bits);
 			reliabilitySystem.PacketReceived(packet_sequence, received_bytes - header);
 			reliabilitySystem.ProcessAck(packet_ack, packet_ack_bits);
-			std::memcpy(data, packet + header, received_bytes - header);
+			std::memcpy(data, packet.data() + header, received_bytes - header);
 			return received_bytes - header;
 		}
 

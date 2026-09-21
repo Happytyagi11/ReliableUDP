@@ -137,7 +137,7 @@ int main(int argc, char* argv[])
 	if (argc >= 2)
 	{
 		int a, b, c, d;
-		if (sscanf(argv[1], "%d.%d.%d.%d", &a, &b, &c, &d))
+		if (sscanf_s(argv[1], "%d.%d.%d.%d", &a, &b, &c, &d))
 		{
 			mode = Client;
 			address = Address(a, b, c, d, ServerPort);

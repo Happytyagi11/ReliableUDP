@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="ReliableUDP/ReliableUDP.vcxproj" />
+  <Project Path="ReliableUDP/ReliableUDP.vcxproj" Id="c801911c-bef6-43d2-a593-be2cbb5cce5b" />
 </Solution>
