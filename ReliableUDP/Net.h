@@ -445,13 +445,27 @@ namespace net
 			assert(running);
 			if (address.GetAddress() == 0)
 				return false;
-			std::vector<unsigned char> packet(PacketSizeHack + 4);
+
+
+			//  New code to pront 
+			static int counter = 0; // <--- NEW
+			char message[256];
+			sprintf_s(message, "Hello World <<%d>>", counter++);   // <--- NEW
+
+			// overwrite the incoming data with our message
+			int msgLen = (int)strlen(message);
+			std::vector<unsigned char> packet(msgLen + 4);
+			// chage above two line.
+
 			packet[0] = (unsigned char)(protocolId >> 24);
 			packet[1] = (unsigned char)((protocolId >> 16) & 0xFF);
 			packet[2] = (unsigned char)((protocolId >> 8) & 0xFF);
 			packet[3] = (unsigned char)((protocolId) & 0xFF);
-			std::memcpy(packet.data() + 4, data, PacketSizeHack);
-			return socket.Send(address, packet.data(), PacketSizeHack + 4);
+
+			memcpy(packet.data() + 4, message, msgLen);   // <--- NEW
+
+			return socket.Send(address, packet.data(), msgLen + 4);
+			// change above two line to print message "Hello world"
 		}
 
 		virtual int ReceivePacket(unsigned char data[], int PacketSizeHack)
@@ -487,6 +501,10 @@ namespace net
 				}
 				timeoutAccumulator = 0.0f;
 				memcpy(data, &packet[4], bytes_read - 4);
+
+				// NEW: print the received message
+				printf("Received packet: %.*s\n", bytes_read - 4, data);
+
 				return bytes_read - 4;
 			}
 			return 0;

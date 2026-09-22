@@ -1,5 +1,8 @@
 // ReliableUDP.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
+// To run the server start ReliableUDP.exe without arguments. 
+// To run the client start ReliableUDP.exe <server ip address>. For example, ReliableUDP.exe 127.0.0.1
+
 
 /*
 	Reliability and Flow Control Example
@@ -129,6 +132,7 @@ int main(int argc, char* argv[])
 		Server
 	};
 
+	// change the port depending on whether we are a client or server
 	Mode mode = Server;
 	Address address;
 
@@ -154,6 +158,8 @@ int main(int argc, char* argv[])
 
 	ReliableConnection connection(ProtocolId, TimeOut);
 
+
+	
 	const int port = mode == Server ? ServerPort : ClientPort;
 
 	if (!connection.Start(port))
