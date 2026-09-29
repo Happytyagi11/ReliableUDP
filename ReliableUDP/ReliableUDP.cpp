@@ -157,8 +157,6 @@ int main(int argc, char* argv[])
 	}
 
 	ReliableConnection connection(ProtocolId, TimeOut);
-
-
 	
 	const int port = mode == Server ? ServerPort : ClientPort;
 
