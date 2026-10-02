@@ -181,14 +181,29 @@ int main(int argc, char* argv[])
 			address = Address(a, b, c, d, ServerPort);
 		}
 	}
-
+	// ------------------------------------------------------------
     // Ask user which file to send.
+	// ------------------------------------------------------------
 	std::string filePath;
 
 	if (mode == Client)
 	{
 		std::cout << "Enter file path to send: ";
 		std::getline(std::cin, filePath);
+
+		// Open file in binary mode. This supports ANY file type
+		std::ifstream in(filePath, std::ios::binary);
+		if (!in) {
+			std::cout << "Failed to open file\n";
+			return 1;
+		}
+		// Determine file size
+		in.seekg(0, std::ios::end);
+		uint32_t fileSize = (uint32_t)in.tellg();
+		in.seekg(0, std::ios::beg);
+		// Read entire file into memory buffer
+		std::vector<unsigned char> fileData(fileSize);
+		in.read((char*)fileData.data(), fileSize);
 	}
 
 	// initialize
