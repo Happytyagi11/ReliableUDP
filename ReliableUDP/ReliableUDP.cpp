@@ -182,6 +182,15 @@ int main(int argc, char* argv[])
 		}
 	}
 
+    // Ask user which file to send.
+	std::string filePath;
+
+	if (mode == Client)
+	{
+		std::cout << "Enter file path to send: ";
+		std::getline(std::cin, filePath);
+	}
+
 	// initialize
 
 	if (!InitializeSockets())
