@@ -9,15 +9,6 @@
 
 #include <cstring> // for memcpy
 
-// ----My Code---- : 
-// Application level protocolpacket types. 
-// These run on the top of given reliable UDP system.
-enum PacketType : uint8_t {
-	PACKET_FILE_INFO = 1,  // metadata before file transfer
-	PACKET_FILE_DATA = 2,  // actual file chunks
-	PACKET_FILE_DONE = 3,  // checksum and completion signal 
-};
-
 
 // platform detection
 

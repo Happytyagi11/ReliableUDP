@@ -17,6 +17,40 @@
 
 #include "Net.h"
 
+// ----My Code---- : 
+// Application level protocolpacket types. 
+// These run on the top of given reliable UDP system.
+enum PacketType : uint8_t {
+	PACKET_FILE_INFO = 1,  // metadata before file transfer
+	PACKET_FILE_DATA = 2,  // actual file chunks
+	PACKET_FILE_DONE = 3,  // checksum and completion signal 
+};
+
+// ---My Code---
+// Pack structs tightly so no padding breaks binary layout.
+#pragma pack(push, 1)
+
+// -- My Code--
+//FILE_INFO packet: sent once at start of transfer.
+// Contains ifle size, chunk size, and filename.
+struct FileInfoPacket {
+	uint8_t type; // PACKET_FILE_INFO
+	uint32_t fileSize;  // total file size in bytes
+	uint32_t chunkSize; // size of each chunk
+	uint8_t fileNameLen; // lenght of filename (no null terminator)
+};  //  followed by filename bytes
+
+// ---My Code---
+// FILE_DATA packet: sent many times.
+// Contains chunk index and chunk data.
+struct FileDataPacket {
+	uint8_t type;  // PACKET_FILE_DATA
+	uint32_t chunkIndex; // which chunk this is 
+	uint32_t chuckSize; // number of bytes in this chunk
+	// followed by chunkSize bytes of file data
+};
+
+
 //#define SHOW_ACKS
 
 using namespace std;
