@@ -597,9 +597,7 @@ int main(int argc, char* argv[])
 		fileData.resize(fileSize);
 		in.read((char*)fileData.data(), fileSize);
 
-		// The Compute MD5 function has not been implemented yet, I will comment it out, Nathanael
-		//uint8_t checksum[16];
-		//ComputeMD5(fileData.data(), fileSize, checksum);
+		// file selection/sending is handled inside the main loop via SendFileOnce
 	}
 
 	// initialize
@@ -633,6 +631,7 @@ int main(int argc, char* argv[])
 	float statsAccumulator = 0.0f;
 
 	FlowControl flowControl;
+	bool fileSent = false;
 
 	while (true)
 	{
@@ -676,12 +675,16 @@ int main(int argc, char* argv[])
 			sendAccumulator -= 1.0f / sendRate;
 		}
 
+		// receive and handle application packets
 		while (true)
 		{
 			unsigned char packet[PacketSizeHack];
 			int bytes_read = connection.ReceivePacket(packet, sizeof(packet));
 			if (bytes_read == 0)
 				break;
+
+			if (mode == Server)
+				HandleIncomingPacket(packet, bytes_read);
 		}
 
 		// show packets that were acked this frame
