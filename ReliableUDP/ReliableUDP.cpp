@@ -50,6 +50,18 @@ struct FileDataPacket {
 	// followed by chunkSize bytes of file data
 };
 
+//---MY Code--
+// FILE_DONE packet: sent once at end
+// Contains final checksum + file size
+struct FileDonePacket {
+	uint8_t type; // PACKET_FILE_DONE
+	uint32_t fileSize; // total file size
+	uint8_t checksum[16]; // MD5 checksum - 16 bytes
+};
+
+//---MY Code---
+#pragma pack(pop)
+
 
 //#define SHOW_ACKS
 
@@ -255,7 +267,7 @@ int main(int argc, char* argv[])
 
 		while (true)
 		{
-			unsigned char packet[256];
+			unsigned char packet[PacketSizeHack];
 			int bytes_read = connection.ReceivePacket(packet, sizeof(packet));
 			if (bytes_read == 0)
 				break;
