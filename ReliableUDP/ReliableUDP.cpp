@@ -462,6 +462,7 @@ void SendFileOnce(ReliableConnection& connection) {
 
 // ----------------------------------------------
 // mycode:  functon to handle incoming packets on the server side
+// ----------------------------------------------
 void HandleIncomingPacket(unsigned char* packet, int bytes_read) {
 	if (bytes_read <= 0) return;
 
@@ -684,6 +685,17 @@ int main(int argc, char* argv[])
 		connection.SendPacket(packet.data(), packet.size());
 	}
 
+	// ------------------------------------------------------------
+	// my code: Send final checksum + file size.
+	// ------------------------------------------------------------
+	// compute checksum of the file
+	unsigned char checksum[16];
+	ComputeMD5(fileData.data(), fileSize, checksum);
+	FileDonePacket done{};
+	done.type = PACKET_FILE_DONE;
+	done.fileSize = fileSize;
+	memcpy(done.checksum, checksum, 16);
+	connection.SendPacket((unsigned char*)&done, sizeof(done));
 
 	bool connected = false;
 	float sendAccumulator = 0.0f;
