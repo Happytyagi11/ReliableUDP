@@ -14,6 +14,8 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <chrono>
 
 #include "Net.h"
 
@@ -47,7 +49,7 @@ struct FileInfoPacket {
 struct FileDataPacket {
 	uint8_t type;  // PACKET_FILE_DATA
 	uint32_t chunkIndex; // which chunk this is 
-	uint32_t chuckSize; // number of bytes in this chunk
+	uint32_t chunkSize; // number of bytes in this chunk
 	// followed by chunkSize bytes of file data
 };
 
@@ -76,6 +78,15 @@ const float DeltaTime = 1.0f / 30.0f;
 const float SendRate = 1.0f / 30.0f;
 const float TimeOut = 10.0f;
 const int PacketSize = 256;  //---
+
+// MY code:  Add variable for receiver state  and function for server side
+bool receivingFile = false;
+uint32_t expectedFileSize = 0;
+uint32_t expectedChunkSize = 0;
+std::string receivedFileName;
+std::vector<unsigned char> recvBuffer;
+std::vector<bool> chunkReceived;
+
 
 class FlowControl
 {
@@ -359,10 +370,96 @@ void ComputeMD5(const unsigned char* data, size_t len, unsigned char out[16]) {
 	MD5Update(&ctx, data, len);
 	MD5Final(out, &ctx);
 }
-
-
+// ----------------------------------------------
 
 // ----------------------------------------------
+// mycode:  Sender function 
+// ----------------------------------------------
+void SendFileOnce(ReliableConnection& connection) {
+	std::string filePath;
+	std::cout << "Enter file path to send: ";
+	std::getline(std::cin, filePath);
+
+	std::ifstream in(filePath, std::ios::binary);
+	if (!in) {
+		std::cout << "Failed to open file\n";
+		return;
+	}
+
+	in.seekg(0, std::ios::end);
+	uint32_t fileSize = (uint32_t)in.tellg();
+	in.seekg(0, std::ios::beg);
+
+	std::vector<unsigned char> fileData(fileSize);
+	in.read((char*)fileData.data(), fileSize);
+
+	unsigned char checksum[16];
+	ComputeMD5(fileData.data(), fileSize, checksum);
+
+	uint32_t chunkSize = 1024;
+	std::string fileName = filePath.substr(filePath.find_last_of("/\\") + 1);
+
+	// corruption test flag
+	bool corrupt = false;
+	std::cout << "Enable corruption test? (1=yes, 0=no): ";
+	int choice;
+	std::cin >> choice;
+	std::cin.ignore();
+	corrupt = (choice == 1);
+
+	auto start = std::chrono::high_resolution_clock::now();
+
+	// FILE_INFO
+	FileInfoPacket info{};
+	info.type = PACKET_FILE_INFO;
+	info.fileSize = fileSize;
+	info.chunkSize = chunkSize;
+	info.fileNameLen = (uint8_t)fileName.size();
+
+	std::vector<unsigned char> infoPacket(sizeof(FileInfoPacket) + fileName.size());
+	memcpy(infoPacket.data(), &info, sizeof(FileInfoPacket));
+	memcpy(infoPacket.data() + sizeof(FileInfoPacket), fileName.data(), fileName.size());
+	connection.SendPacket(infoPacket.data(), (int)infoPacket.size());
+
+	// FILE_DATA chunks
+	uint32_t numChunks = (fileSize + chunkSize - 1) / chunkSize;
+	for (uint32_t i = 0; i < numChunks; ++i) {
+		uint32_t offset = i * chunkSize;
+		uint32_t thisSize = (std::min)(chunkSize, fileSize - offset);
+
+		FileDataPacket header{};
+		header.type = PACKET_FILE_DATA;
+		header.chunkIndex = i;
+		header.chunkSize = thisSize;
+
+		std::vector<unsigned char> dataPacket(sizeof(FileDataPacket) + thisSize);
+		memcpy(dataPacket.data(), &header, sizeof(FileDataPacket));
+		memcpy(dataPacket.data() + sizeof(FileDataPacket),
+			fileData.data() + offset, thisSize);
+
+		// corruption test: flip a byte in one chunk
+		if (corrupt && i == 2 && thisSize > 0) {
+			dataPacket[sizeof(FileDataPacket)] ^= 0xFF;
+		}
+
+		connection.SendPacket(dataPacket.data(), (int)dataPacket.size());
+	}
+
+	// FILE_DONE
+	FileDonePacket done{};
+	done.type = PACKET_FILE_DONE;
+	done.fileSize = fileSize;
+	memcpy(done.checksum, checksum, 16);
+	connection.SendPacket((unsigned char*)&done, sizeof(done));
+
+	auto end = std::chrono::high_resolution_clock::now();
+	double seconds = std::chrono::duration<double>(end - start).count();
+	double mbps = (fileSize * 8.0) / seconds / 1e6;
+
+	std::cout << "Transfer time: " << seconds << " s\n";
+	std::cout << "Speed: " << mbps << " Mbps\n";
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -489,7 +586,7 @@ int main(int argc, char* argv[])
 		FileDataPacket header{};
 		header.type = PACKET_FILE_DATA;
 		header.chunkIndex = i;
-		header.chuckSize = thisSize;
+		header.chunkSize = thisSize;
 
 		// Allocate packet buffer
 		std::vector<unsigned char> packet(
