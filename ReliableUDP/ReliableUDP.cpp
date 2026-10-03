@@ -460,6 +460,85 @@ void SendFileOnce(ReliableConnection& connection) {
 	std::cout << "Speed: " << mbps << " Mbps\n";
 }
 
+// ----------------------------------------------
+// mycode:  functon to handle incoming packets on the server side
+void HandleIncomingPacket(unsigned char* packet, int bytes_read) {
+	if (bytes_read <= 0) return;
+
+	uint8_t type = packet[0];
+
+	switch (type) {
+	case PACKET_FILE_INFO: {
+		FileInfoPacket info{};
+		memcpy(&info, packet, sizeof(FileInfoPacket));
+
+		expectedFileSize = info.fileSize;
+		expectedChunkSize = info.chunkSize;
+		uint8_t nameLen = info.fileNameLen;
+
+		receivedFileName.assign(
+			(char*)(packet + sizeof(FileInfoPacket)),
+			(char*)(packet + sizeof(FileInfoPacket) + nameLen)
+		);
+
+		recvBuffer.assign(expectedFileSize, 0);
+		uint32_t numChunks = (expectedFileSize + expectedChunkSize - 1) / expectedChunkSize;
+		chunkReceived.assign(numChunks, false);
+		receivingFile = true;
+
+		std::cout << "Receiving file: " << receivedFileName
+			<< " (" << expectedFileSize << " bytes)\n";
+		break;
+	}
+	case PACKET_FILE_DATA: {
+		if (!receivingFile) break;
+
+		FileDataPacket header{};
+		memcpy(&header, packet, sizeof(FileDataPacket));
+
+		uint32_t idx = header.chunkIndex;
+		uint32_t size = header.chunkSize;
+		uint32_t offset = idx * expectedChunkSize;
+
+		if (offset + size <= expectedFileSize) {
+			memcpy(recvBuffer.data() + offset,
+				packet + sizeof(FileDataPacket),
+				size);
+			chunkReceived[idx] = true;
+		}
+		break;
+	}
+	case PACKET_FILE_DONE: {
+		if (!receivingFile) break;
+
+		FileDonePacket done{};
+		memcpy(&done, packet, sizeof(FileDonePacket));
+
+		unsigned char actual[16];
+		ComputeMD5(recvBuffer.data(), done.fileSize, actual);
+
+		bool checksumOK = (memcmp(actual, done.checksum, 16) == 0);
+		bool allChunks = std::all_of(chunkReceived.begin(), chunkReceived.end(),
+			[](bool v) { return v; });
+
+		if (checksumOK && allChunks && done.fileSize == expectedFileSize) {
+			std::cout << "File received correctly.\n";
+			std::ofstream out(receivedFileName, std::ios::binary);
+			out.write((char*)recvBuffer.data(), done.fileSize);
+		}
+		else {
+			std::cout << "File transfer FAILED (missing chunks or checksum mismatch).\n";
+		}
+
+		receivingFile = false;
+		break;
+	}
+	default:
+		// ignore unknown
+		break;
+	}
+}
+
 
 int main(int argc, char* argv[])
 {
