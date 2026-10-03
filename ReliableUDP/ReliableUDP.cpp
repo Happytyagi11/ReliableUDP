@@ -17,6 +17,7 @@
 
 #include "Net.h"
 
+
 // ----My Code---- : 
 // Application level protocolpacket types. 
 // These run on the top of given reliable UDP system.
@@ -235,8 +236,13 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
+	if (mode == Client)
+		connection.Connect(address);
+	else
+		connection.Listen();
+
 	// ------------------------------------------------------------
-	// Choose chunk size. Must fit inside Reliable UDP packet.
+	// Choose chunk size. Must fit inside Reliable UDP packet
 	// Nathanael's 
 	// ------------------------------------------------------------
 
@@ -261,10 +267,40 @@ int main(int argc, char* argv[])
 	// Send through reliable UDP
 	connection.SendPacket(packet.data(), packet.size());
 
-	if (mode == Client)
-		connection.Connect(address);
-	else
-		connection.Listen();
+	// ------------------------------------------------------------
+    // Break file into chunks and send each one
+	// Nathanael's
+    // --------------------------------------------------------------
+	uint32_t numChunks = (fileSize + chunkSize - 1) / chunkSize;
+
+	for (uint32_t i = 0; i < numChunks; ++i)
+	{
+		uint32_t offset = i * chunkSize;
+		uint32_t thisSize = (std::min)(chunkSize, fileSize - offset);
+
+		// Build header
+		FileDataPacket header{};
+		header.type = PACKET_FILE_DATA;
+		header.chunkIndex = i;
+		header.chuckSize = thisSize;
+
+		// Allocate packet buffer
+		std::vector<unsigned char> packet(
+			sizeof(FileDataPacket) + thisSize);
+
+		// Copy header + chunk data
+		memcpy(packet.data(),
+			&header,
+			sizeof(FileDataPacket));
+
+		memcpy(packet.data() + sizeof(FileDataPacket),
+			fileData.data() + offset,
+			thisSize);
+
+		// Send chunk
+		connection.SendPacket(packet.data(), packet.size());
+	}
+
 
 	bool connected = false;
 	float sendAccumulator = 0.0f;
