@@ -484,10 +484,6 @@ namespace net
 				}
 				timeoutAccumulator = 0.0f;
 				memcpy(data, &packet[4], bytes_read - 4);
-
-				// NEW: print the received message
-				printf("Received packet: %.*s\n", bytes_read - 4, data);
-
 				return bytes_read - 4;
 			}
 			return 0;
