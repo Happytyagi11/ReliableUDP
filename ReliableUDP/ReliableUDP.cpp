@@ -182,9 +182,12 @@ int main(int argc, char* argv[])
 		}
 	}
 	// ------------------------------------------------------------
-    // Ask user which file to send.
+    // Ask user which file to send
+	// Nathanael;s code
 	// ------------------------------------------------------------
 	std::string filePath;
+	uint32_t fileSize = 0;
+	std::vector<unsigned char> fileData;
 
 	if (mode == Client)
 	{
@@ -193,17 +196,25 @@ int main(int argc, char* argv[])
 
 		// Open file in binary mode. This supports ANY file type
 		std::ifstream in(filePath, std::ios::binary);
-		if (!in) {
+
+		if (!in)
+		{
 			std::cout << "Failed to open file\n";
 			return 1;
 		}
+
 		// Determine file size
 		in.seekg(0, std::ios::end);
-		uint32_t fileSize = (uint32_t)in.tellg();
+		fileSize = (uint32_t)in.tellg();
 		in.seekg(0, std::ios::beg);
+
 		// Read entire file into memory buffer
-		std::vector<unsigned char> fileData(fileSize);
+		fileData.resize(fileSize);
 		in.read((char*)fileData.data(), fileSize);
+
+		// The Compute MD5 function has not been implemented yet, I will comment it out, Nathanael
+		//uint8_t checksum[16];
+		//ComputeMD5(fileData.data(), fileSize, checksum);
 	}
 
 	// initialize
@@ -223,6 +234,32 @@ int main(int argc, char* argv[])
 		printf("could not start connection on port %d\n", port);
 		return 1;
 	}
+
+	// ------------------------------------------------------------
+	// Choose chunk size. Must fit inside Reliable UDP packet.
+	// Nathanael's 
+	// ------------------------------------------------------------
+
+	uint32_t chunkSize = 1024;
+
+	//Extract filename from path
+	std::string fileName = filePath.substr(filePath.find_last_of("/\\") + 1);
+
+	//Build FILE_INFO packet
+	FileInfoPacket info{};
+	info.type = PACKET_FILE_INFO;
+	info.fileSize = fileSize;
+	info.chunkSize = chunkSize;
+	info.fileNameLen = (uint8_t)fileName.size();
+
+	//Allocate buffer: struct + filename bytes
+	std::vector<unsigned char> packet(sizeof(FileInfoPacket) + fileName.size());
+	// Copy struct + filename into packet
+    memcpy(packet.data(), &info, sizeof(FileInfoPacket));
+	memcpy(packet.data() + sizeof(FileInfoPacket), fileName.data(), fileName.size());
+
+	// Send through reliable UDP
+	connection.SendPacket(packet.data(), packet.size());
 
 	if (mode == Client)
 		connection.Connect(address);
