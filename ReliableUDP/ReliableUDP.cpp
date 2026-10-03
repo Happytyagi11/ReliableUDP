@@ -17,6 +17,7 @@
 
 #include "Net.h"
 
+
 // ----My Code---- : 
 // Application level protocolpacket types. 
 // These run on the top of given reliable UDP system.
@@ -181,6 +182,41 @@ int main(int argc, char* argv[])
 			address = Address(a, b, c, d, ServerPort);
 		}
 	}
+	// ------------------------------------------------------------
+    // Ask user which file to send
+	// Nathanael;s code
+	// ------------------------------------------------------------
+	std::string filePath;
+	uint32_t fileSize = 0;
+	std::vector<unsigned char> fileData;
+
+	if (mode == Client)
+	{
+		std::cout << "Enter file path to send: ";
+		std::getline(std::cin, filePath);
+
+		// Open file in binary mode. This supports ANY file type
+		std::ifstream in(filePath, std::ios::binary);
+
+		if (!in)
+		{
+			std::cout << "Failed to open file\n";
+			return 1;
+		}
+
+		// Determine file size
+		in.seekg(0, std::ios::end);
+		fileSize = (uint32_t)in.tellg();
+		in.seekg(0, std::ios::beg);
+
+		// Read entire file into memory buffer
+		fileData.resize(fileSize);
+		in.read((char*)fileData.data(), fileSize);
+
+		// The Compute MD5 function has not been implemented yet, I will comment it out, Nathanael
+		//uint8_t checksum[16];
+		//ComputeMD5(fileData.data(), fileSize, checksum);
+	}
 
 	// initialize
 
@@ -204,6 +240,67 @@ int main(int argc, char* argv[])
 		connection.Connect(address);
 	else
 		connection.Listen();
+
+	// ------------------------------------------------------------
+	// Choose chunk size. Must fit inside Reliable UDP packet
+	// Nathanael's 
+	// ------------------------------------------------------------
+
+	uint32_t chunkSize = 1024;
+
+	//Extract filename from path
+	std::string fileName = filePath.substr(filePath.find_last_of("/\\") + 1);
+
+	//Build FILE_INFO packet
+	FileInfoPacket info{};
+	info.type = PACKET_FILE_INFO;
+	info.fileSize = fileSize;
+	info.chunkSize = chunkSize;
+	info.fileNameLen = (uint8_t)fileName.size();
+
+	//Allocate buffer: struct + filename bytes
+	std::vector<unsigned char> packet(sizeof(FileInfoPacket) + fileName.size());
+	// Copy struct + filename into packet
+    memcpy(packet.data(), &info, sizeof(FileInfoPacket));
+	memcpy(packet.data() + sizeof(FileInfoPacket), fileName.data(), fileName.size());
+
+	// Send through reliable UDP
+	connection.SendPacket(packet.data(), packet.size());
+
+	// ------------------------------------------------------------
+    // Break file into chunks and send each one
+	// Nathanael's
+    // --------------------------------------------------------------
+	uint32_t numChunks = (fileSize + chunkSize - 1) / chunkSize;
+
+	for (uint32_t i = 0; i < numChunks; ++i)
+	{
+		uint32_t offset = i * chunkSize;
+		uint32_t thisSize = (std::min)(chunkSize, fileSize - offset);
+
+		// Build header
+		FileDataPacket header{};
+		header.type = PACKET_FILE_DATA;
+		header.chunkIndex = i;
+		header.chuckSize = thisSize;
+
+		// Allocate packet buffer
+		std::vector<unsigned char> packet(
+			sizeof(FileDataPacket) + thisSize);
+
+		// Copy header + chunk data
+		memcpy(packet.data(),
+			&header,
+			sizeof(FileDataPacket));
+
+		memcpy(packet.data() + sizeof(FileDataPacket),
+			fileData.data() + offset,
+			thisSize);
+
+		// Send chunk
+		connection.SendPacket(packet.data(), packet.size());
+	}
+
 
 	bool connected = false;
 	float sendAccumulator = 0.0f;
