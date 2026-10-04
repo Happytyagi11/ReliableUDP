@@ -23,11 +23,12 @@
 // ----My Code---- : 
 // Application level protocolpacket types. 
 // These run on the top of given reliable UDP system.
-enum PacketType : uint8_t {
-	PACKET_FILE_INFO = 1,  // metadata before file transfer
-	PACKET_FILE_DATA = 2,  // actual file chunks
-	PACKET_FILE_DONE = 3,  // checksum and completion signal 
-};
+//enum PacketType : uint8_t {
+//	PACKET_HANDSHAKE = 0,
+//	PACKET_FILE_INFO = 1,  // metadata before file transfer
+//	PACKET_FILE_DATA = 2,  // actual file chunks
+//	PACKET_FILE_DONE = 3,  // checksum and completion signal 
+//};
 
 // ---My Code---
 // Pack structs tightly so no padding breaks binary layout.
@@ -87,7 +88,7 @@ std::string receivedFileName;
 std::vector<unsigned char> recvBuffer;
 std::vector<bool> chunkReceived;
 
-
+bool fileReceived = false;
 class FlowControl
 {
 public:
@@ -522,12 +523,17 @@ void HandleIncomingPacket(unsigned char* packet, int bytes_read) {
 		bool allChunks = std::all_of(chunkReceived.begin(), chunkReceived.end(),
 			[](bool v) { return v; });
 
-		if (checksumOK && allChunks && done.fileSize == expectedFileSize) {
+		if (checksumOK && allChunks && done.fileSize == expectedFileSize)
+		{
 			std::cout << "File received correctly.\n";
+
 			std::ofstream out(receivedFileName, std::ios::binary);
 			out.write((char*)recvBuffer.data(), done.fileSize);
+
+			fileReceived = true;
 		}
-		else {
+		else
+		{
 			std::cout << "File transfer FAILED (missing chunks or checksum mismatch).\n";
 		}
 
@@ -555,7 +561,7 @@ int main(int argc, char* argv[])
 	Mode mode = Server;
 	Address address;
 
-    #pragma warning(suppress : 4996)
+#pragma warning(suppress : 4996)
 
 	if (argc >= 2)
 	{
@@ -566,39 +572,7 @@ int main(int argc, char* argv[])
 			address = Address(a, b, c, d, ServerPort);
 		}
 	}
-	// ------------------------------------------------------------
-    // Ask user which file to send
-	// Nathanael;s code
-	// ------------------------------------------------------------
-	std::string filePath;
-	uint32_t fileSize = 0;
-	std::vector<unsigned char> fileData;
-
-	if (mode == Client)
-	{
-		std::cout << "Enter file path to send: ";
-		std::getline(std::cin, filePath);
-
-		// Open file in binary mode. This supports ANY file type
-		std::ifstream in(filePath, std::ios::binary);
-
-		if (!in)
-		{
-			std::cout << "Failed to open file\n";
-			return 1;
-		}
-
-		// Determine file size
-		in.seekg(0, std::ios::end);
-		fileSize = (uint32_t)in.tellg();
-		in.seekg(0, std::ios::beg);
-
-		// Read entire file into memory buffer
-		fileData.resize(fileSize);
-		in.read((char*)fileData.data(), fileSize);
-
-		// file selection/sending is handled inside the main loop via SendFileOnce
-	}
+	
 
 	// initialize
 
@@ -609,128 +583,109 @@ int main(int argc, char* argv[])
 	}
 
 	ReliableConnection connection(ProtocolId, TimeOut);
-	
+
 	const int port = mode == Server ? ServerPort : ClientPort;
 
+	// START THE CONNECTION FIRST
 	if (!connection.Start(port))
 	{
 		printf("could not start connection on port %d\n", port);
+		ShutdownSockets();
 		return 1;
 	}
 
+	// THEN connect or listen
 	if (mode == Client)
+	{
 		connection.Connect(address);
-	else
-		connection.Listen();
 
+		// Send initial handshake to server
+		uint8_t handshake = PACKET_HANDSHAKE;
+		connection.SendPacket(&handshake, sizeof(handshake));
+	}
+	else
+	{
+		connection.Listen();
+	}
 	// file sending is handled inside the main loop via SendFileOnce
 
+	
+	
+	float waitAfterSend = 0.0f;
 
-	bool connected = false;
-	float sendAccumulator = 0.0f;
-	float statsAccumulator = 0.0f;
-
-	FlowControl flowControl;
+	
 	bool fileSent = false;
-
+	bool connected = false;
 	while (true)
 	{
-		// update flow control
-
-		if (connection.IsConnected())
-			flowControl.Update(DeltaTime, connection.GetReliabilitySystem().GetRoundTripTime() * 1000.0f);
-
-		const float sendRate = flowControl.GetSendRate();
-
-		// detect changes in connection state
-
-		if (mode == Server && connected && !connection.IsConnected())
-		{
-			flowControl.Reset();
-			printf("reset flow control\n");
-			connected = false;
-		}
-
+		// --- Detect connection state changes ---
 		if (!connected && connection.IsConnected())
 		{
-			printf("client connected to server\n");
+			printf("Connected.\n");
 			connected = true;
 		}
 
 		if (!connected && connection.ConnectFailed())
 		{
-			printf("connection failed\n");
+			printf("Connection failed.\n");
 			break;
 		}
 
-		// send and receive packets
-
-		sendAccumulator += DeltaTime;
-
-		while (sendAccumulator > 1.0f / sendRate)
+		if (connected && !connection.IsConnected())
 		{
-			unsigned char packet[PacketSize];
-			memset(packet, 0, sizeof(packet));
-			connection.SendPacket(packet, sizeof(packet));
-			sendAccumulator -= 1.0f / sendRate;
+			printf("Connection lost.\n");
+			break;
 		}
 
-		// receive and handle application packets
+		// --- CLIENT: send file once ---
+		if (mode == Client && connected && !fileSent)
+		{
+			SendFileOnce(connection);
+			fileSent = true;
+		}
+
+		// --- BOTH CLIENT AND SERVER must receive packets ---
 		while (true)
 		{
-			unsigned char packet[PacketSizeHack];
+			unsigned char packet[2048];
 			int bytes_read = connection.ReceivePacket(packet, sizeof(packet));
 			if (bytes_read == 0)
 				break;
 
 			if (mode == Server)
+			{
 				HandleIncomingPacket(packet, bytes_read);
+
+				
+			}
+			else if (mode == Client)
+			{
+				// client must read handshake packets
+				// (do nothing here — just receiving is enough)
+			}
 		}
 
-		// show packets that were acked this frame
-
-#ifdef SHOW_ACKS
-		unsigned int* acks = NULL;
-		int ack_count = 0;
-		connection.GetReliabilitySystem().GetAcks(&acks, ack_count);
-		if (ack_count > 0)
-		{
-			printf("acks: %d", acks[0]);
-			for (int i = 1; i < ack_count; ++i)
-				printf(",%d", acks[i]);
-			printf("\n");
-		}
-#endif
-
-		// update connection
-
+		// --- Update reliability system ---
 		connection.Update(DeltaTime);
 
-		// show connection stats
-
-		statsAccumulator += DeltaTime;
-
-		while (statsAccumulator >= 0.25f && connection.IsConnected())
+		// --- CLIENT: exit after sending file ---
+		if (mode == Client && fileSent)
 		{
-			float rtt = connection.GetReliabilitySystem().GetRoundTripTime();
+			waitAfterSend += DeltaTime;
+			if (waitAfterSend > 2.0f)   // give server time to finish
+				break;
+		}
 
-			unsigned int sent_packets = connection.GetReliabilitySystem().GetSentPackets();
-			unsigned int acked_packets = connection.GetReliabilitySystem().GetAckedPackets();
-			unsigned int lost_packets = connection.GetReliabilitySystem().GetLostPackets();
-
-			float sent_bandwidth = connection.GetReliabilitySystem().GetSentBandwidth();
-			float acked_bandwidth = connection.GetReliabilitySystem().GetAckedBandwidth();
-
-			printf("rtt %.1fms, sent %d, acked %d, lost %d (%.1f%%), sent bandwidth = %.1fkbps, acked bandwidth = %.1fkbps\n",
-				rtt * 1000.0f, sent_packets, acked_packets, lost_packets,
-				sent_packets > 0.0f ? (float)lost_packets / (float)sent_packets * 100.0f : 0.0f,
-				sent_bandwidth, acked_bandwidth);
-
-			statsAccumulator -= 0.25f;
+		// --- SERVER: exit after receiving file ---
+		if (mode == Server && fileReceived)
+		{
+			printf("Server: file received and saved. Exiting.\n");
+			break;
 		}
 
 		net::wait(DeltaTime);
 	}
+
 
 	ShutdownSockets();
 

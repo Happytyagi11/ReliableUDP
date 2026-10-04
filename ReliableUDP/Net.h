@@ -7,8 +7,20 @@
 #ifndef NET_H
 #define NET_H
 
-#include <cstring> // for memcpy
+#include <stdio.h>
+#include <vector>
+#include <cassert>
+#include <stdint.h>
 
+enum PacketType : uint8_t
+{
+	PACKET_HANDSHAKE = 0,
+	PACKET_FILE_INFO = 1,
+	PACKET_FILE_DATA = 2,
+	PACKET_FILE_DONE = 3
+};
+
+#include <cstring> // for memcpy
 
 // platform detection
 
@@ -446,17 +458,21 @@ namespace net
 			assert(running);
 			if (address.GetAddress() == 0)
 				return false;
-
-			// send provided data (includes any headers added by caller)
-			return socket.Send(address, data, size);
+			std::vector<unsigned char> packet(size + 4);
+			packet[0] = (unsigned char)(protocolId >> 24);
+			packet[1] = (unsigned char)((protocolId >> 16) & 0xFF);
+			packet[2] = (unsigned char)((protocolId >> 8) & 0xFF);
+			packet[3] = (unsigned char)((protocolId) & 0xFF);
+			std::memcpy(packet.data() + 4, data, size);
+			return socket.Send(address, packet.data(), size + 4);
 		}
 
-		virtual int ReceivePacket(unsigned char data[], int PacketSizeHack)
+		virtual int ReceivePacket(unsigned char data[], int size)
 		{
 			assert(running);
-			std::vector<unsigned char> packet(PacketSizeHack + 4);
+			std::vector<unsigned char> packet(size + 4);
 			Address sender;
-			int bytes_read = socket.Receive(sender, packet.data(), PacketSizeHack + 4);
+			int bytes_read = socket.Receive(sender, packet.data(), size + 4);
 			if (bytes_read == 0)
 				return 0;
 			if (bytes_read <= 4)
@@ -469,10 +485,15 @@ namespace net
 			if (mode == Server && !IsConnected())
 			{
 				printf("server accepts connection from client %d.%d.%d.%d:%d\n",
-					sender.GetA(), sender.GetB(), sender.GetC(), sender.GetD(), sender.GetPort());
+					sender.GetA(), sender.GetB(), sender.GetC(),
+					sender.GetD(), sender.GetPort());
+
 				state = Connected;
 				address = sender;
 				OnConnect();
+
+				uint8_t handshake = PACKET_HANDSHAKE;
+				SendPacket(&handshake, sizeof(handshake));
 			}
 			if (sender == address)
 			{
