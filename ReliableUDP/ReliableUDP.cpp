@@ -376,10 +376,11 @@ void ComputeMD5(const unsigned char* data, size_t len, unsigned char out[16]) {
 // ----------------------------------------------
 // mycode:  Sender function 
 // ----------------------------------------------
-void SendFileOnce(ReliableConnection& connection) {
-	std::string filePath;
-	std::cout << "Enter file path to send: ";
-	std::getline(std::cin, filePath);
+void SendFileOnce(
+	ReliableConnection& connection,
+	const std::string& filePath,
+	bool corrupt)
+{
 
 	std::ifstream in(filePath, std::ios::binary);
 	if (!in) {
@@ -400,13 +401,7 @@ void SendFileOnce(ReliableConnection& connection) {
 	uint32_t chunkSize = 1024;
 	std::string fileName = filePath.substr(filePath.find_last_of("/\\") + 1);
 
-	// corruption test flag
-	bool corrupt = false;
-	std::cout << "Enable corruption test? (1=yes, 0=no): ";
-	int choice;
-	std::cin >> choice;
-	std::cin.ignore();
-	corrupt = (choice == 1);
+	
 
 	auto start = std::chrono::high_resolution_clock::now();
 
@@ -444,6 +439,10 @@ void SendFileOnce(ReliableConnection& connection) {
 		}
 
 		connection.SendPacket(dataPacket.data(), (int)dataPacket.size());
+
+		std::cout << "CLIENT sent FILE_DATA chunk "
+			<< i
+			<< "\n";
 	}
 
 	// FILE_DONE
@@ -464,10 +463,18 @@ void SendFileOnce(ReliableConnection& connection) {
 // ----------------------------------------------
 // mycode:  functon to handle incoming packets on the server side
 // 
-void HandleIncomingPacket(unsigned char* packet, int bytes_read) {
-	if (bytes_read <= 0) return;
+void HandleIncomingPacket(unsigned char* packet, int bytes_read)
+{
+	if (bytes_read <= 0)
+		return;
 
 	uint8_t type = packet[0];
+
+	std::cout << "SERVER received packet type: "
+		<< (int)type
+		<< " size: "
+		<< bytes_read
+		<< " bytes\n";
 
 	switch (type) {
 	case PACKET_FILE_INFO: {
@@ -573,6 +580,32 @@ int main(int argc, char* argv[])
 		}
 	}
 	
+	std::string filePath;
+	bool corrupt = false;
+
+	if (mode == Client)
+	{
+		std::cout << "Enter file path to send: ";
+		std::getline(std::cin, filePath);
+
+		std::ifstream testFile(filePath, std::ios::binary);
+
+		if (!testFile)
+		{
+			std::cout << "Failed to open file\n";
+			return 1;
+		}
+
+		testFile.close();
+
+		std::cout << "Enable corruption test? (1=yes, 0=no): ";
+
+		int choice;
+		std::cin >> choice;
+		std::cin.ignore();
+
+		corrupt = (choice == 1);
+	}
 
 	// initialize
 
@@ -640,7 +673,7 @@ int main(int argc, char* argv[])
 		// --- CLIENT: send file once ---
 		if (mode == Client && connected && !fileSent)
 		{
-			SendFileOnce(connection);
+			SendFileOnce(connection, filePath, corrupt);
 			fileSent = true;
 		}
 
@@ -672,7 +705,7 @@ int main(int argc, char* argv[])
 		if (mode == Client && fileSent)
 		{
 			waitAfterSend += DeltaTime;
-			if (waitAfterSend > 2.0f)   // give server time to finish
+			if (waitAfterSend > 15.0f)   // give server time to finish
 				break;
 		}
 
